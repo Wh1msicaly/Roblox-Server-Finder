@@ -1,43 +1,24 @@
 {
-    "manifest_version": 3,
+    "manifest_version": 2, 
     "name": "Roblox Server Finder",
-    "description": "A server finder that attempts to find a server with a specified amount of players",
-    "version": "0.400",
-    "icons": {
-      "16": "/images/preview/16.png",
-      "48": "/images/preview/48.png",
-      "128": "/images/preview/128.png"
+    "description":"A server finder that attempts to find a server with a specified amount of players",
+    "version" : "0.400",
+    "icons" : {
+        "16" : "/images/preview/16.png",
+        "48" : "/images/preview/48.png",
+        "128" : "/images/preview/128.png"
     },
-    "action": {
-      "default_popup": "/resrce/index.html",
-      "default_icon": {
-        "16": "/images/task/16.png",
-        "19": "/images/task/19.png",
-        "38": "/images/task/38.png",
-        "48": "/images/task/48.png",
-        "128": "/images/task/28.png"
-      }
+    "browser_action": {
+        "default_icon": "/images/task/48.png",
+        "default_title": "Roblox Server Finder",
+        "default_popup": "/resrce/index.html"
     },
     "web_accessible_resources": [
-      {
-        "resources": [
-          "/js/rbx.js",
-          "/js/web.js"
-        ],
-        "matches": [
-          "*://*.roblox.com/*"
-        ]
-      }
+        "/js/rbx.js",
+        "/js/web.js"
     ],
-    "content_scripts": [
-      {
-        "matches": [
-          "*://*.roblox.com/games/*"
-        ],
-        "run_at": "document_end",
-        "js": [
-          "/js/inject.js"
-        ]
-      }
-    ]
-  }
+    "content_scripts" : [{
+        "matches" : ["https://www.roblox.com/games/*"], 
+        "js": ["/js/inject.js"]
+    }]
+}

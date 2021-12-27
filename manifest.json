@@ -2,12 +2,7 @@
     "manifest_version": 2, 
     "name": "Roblox Server Finder",
     "description":"A server finder that attempts to find a server with a specified amount of players",
-    "version" : "0.400",
-    "icons" : {
-        "16" : "/images/preview/16.png",
-        "48" : "/images/preview/48.png",
-        "128" : "/images/preview/128.png"
-    },
+    "version" : "0.350.5",
     "browser_action": {
         "default_icon": "/images/task/48.png",
         "default_title": "Roblox Server Finder",

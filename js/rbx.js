@@ -1,610 +1,590 @@
-// ==UserScript==
-// @name         Roblox Server Finder
-// @version      0.400.5
-// @description  One of the most complex Server Finders! A Server finder that allows you to specify, amount of players. Uses a quick-search algorithm to find servers as quick as possible.Better for finding servers that are more than 0.
-// @match        https://www.roblox.com/games/*
-// @grant        none
-// @namespace https://greasyfork.org/users/804801
-// ==/UserScript==
-
+// Plugin Related functions 
 (function () {
-    Math.randomseed
-    // Gets the game ID
-    const gid = Number(window.location.pathname.split("/")[2]);
-    const PlaceID = location.href.match(/\/(\d+)\//g);
-    if (!gid) return;
+    //
+    const Difference = function (a, b) { return Math.abs(a - b); }
+    const IsIterable = function (obj) {if (obj == null) {return false;}return typeof obj[Symbol.iterator] === 'function';}
+    const GetRandomInt = function(max) { return Math.floor(Math.random() * max) }
+    const Range = function(n,c1,c2){if (n < c1){return c1;}if (n > c2){return c2;}return n}
+        
+    const ProvideCredintials = { credentials: "include" }
+    // Gets the PlaceID/UniverseID
+    const PlaceID = Number(window.location.pathname.split("/")[2]);
     // Gets the game URL
-    const url = `https://www.roblox.com/games/${gid}`;
-    let hints = ["* Players may join as your are connecting, search for slightly smaller.",
-                 "* Quick search, skips to the end good for finding small or empty servers.",
-                 "* Smart search, goes inbetween pages to find the closest playercount."];
-    let hintText = hints[0];
-    let searchTotal = 0;
-    let searchDidFlip = [false,false];
-    let searchPageMemory = [0,0];
-    let searchRateMemory = [0,0];
-    let searchRateCount = 0;
-    let searchRateDef = 0;
-    let searchRate = 0;
-    let searchRateRepMax = 20;
-    let searchRateSingleMax = 5;
-    let searchFlipCount = 0;
-    let searchFlipMax = 5;
-    let searchSamePageCount = 0;
-    let searchSamePageMax = 7;
-    let searchSamePageMaxQuick = 12;
-    let serachRatePercent = 0.1;//0.08
-    let searchCapacity = 0;
-    let searchExpandCount = 0;
-    let searchExpandCountLimit = 2;
-    let currentsearch = 0;
-    //
-    //   This is only for devolopment.
-    //
-    // uuid really has no value.
-    let addUUID = false;
-    // Fetch roblox's servers
-    fetch(`https://www.roblox.com/games/getgameinstancesjson?placeId=${gid}&startindex=${0}`)
-    // Turn the response into JSON
-        .then((resp) => resp.json())
-        .then(function (data) {
-        searchTotal = data.TotalCollectionSize
-        searchCapacity = (data.Collection[0].Capacity*1)
-        updateCapacity();
-        searchRate = Math.round(data.TotalCollectionSize*serachRatePercent)+1;
-        searchRateDef = Math.round(data.TotalCollectionSize*serachRatePercent)+1;
+    const Url = `https://www.roblox.com/games/${PlaceID}`;
+    // 
+    var RobloxServerFinder = {
+       ServerDetails : {
+           SearchCapacity : 0,
+           SearchSize : 100,
+           ServerPanels : [],
+       }, 
+        
+       Search : {
+           TotalScanned : 0, 
+           Direction : "next",
+           LastDirection : "next",
+           PlayerCount : 0,
+           SearchRange : [0,0],
+           CurrentCursor : "",
+           LastClosestMatch : -10000,
+           ClosestMatch : -10000,
+           //
+           ReadDirection : "Asc",
+           // 
+           SamePageCount : 0,
+       },
+       Flags : {
+           AddUUID : false,
+           
+           
+       },
+        
+       Hints : ["* Players may join as your are connecting, search for slightly smaller.",
+                 "* You can change preferences about the plugin in the plugin interfrace..",
+                 "* Smart search, goes inbetween pages to find the closest playercount."],
+       //
+       ConstructorArray : [],
+        
+       ElementConstructors : {},
+        
+       UrlGen : {},
+        
+       Elements : {},
+        
+       StylePacks : {
+           InLineDisplay : {
+               display : "inline"
+           },
+           Invisible : {
+               display : "none"
+           }
+       },
+        
+       Enabled : true
+    };
+    // Easy Construciton of Elements.
+    RobloxServerFinder.Apply = function(Element,Properties,Style) {
+        for(const Key in Properties){ const Value = Properties[Key];
+            Element.setAttribute(Key,Value);
+        }
+        for(const Key in Style){ const Value = Style[Key];
+            Element.style[Key] = Value;
+        }
+    }
+    RobloxServerFinder.Construct = function(Element,Properties,Style) {
+        let DocElement = document.createElement(Element); 
+  
+        for(const Key in Properties){ const Value = Properties[Key]; 
+            DocElement[Key] = Value;
+        }
+        for(const Key in Style){ const Value = Style[Key]; 
+            DocElement.style[Key] = Value;
+        }
+        
+        return DocElement
+    }   
+    
+    
+     RobloxServerFinder.Elements.ClearButton = RobloxServerFinder.Construct("button",{
+         className : "btn-control-sm btn-full-width",
+         type : "button",
+         textContent : "Clear All",
+     
+     },RobloxServerFinder.StylePacks.Invisible);
+    
+    
+    RobloxServerFinder.Elements.QuickSearchButton = RobloxServerFinder.Construct("span",{
+        textContent : "Quick Search",
+        className : "btn-secondary-md",
+        style : {
+            display : "none"
+        }
+    },RobloxServerFinder.StylePacks.Invisible);
+    
+    RobloxServerFinder.Elements.SmartSearchButton = RobloxServerFinder.Construct("span",{
+        textContent : "Smart Search",
+        className : "btn-secondary-md",
+        style : {
+            display : "inline"
+        }
+    },RobloxServerFinder.StylePacks.InLineDisplay);
+    
+    RobloxServerFinder.Elements.CancelButton = RobloxServerFinder.Construct("span",{
+        textContent : "Stop Searching",
+        className : "btn-secondary-md",
+        style : {
+            display : "none"
+        }
+    },RobloxServerFinder.StylePacks.Invisible);
+    
+    
+    
+    RobloxServerFinder.Elements.Footer = RobloxServerFinder.Construct("span",{
+         className : "rbx-running-games-footer",
     });
-    // subset of searchtotal
+    RobloxServerFinder.Elements.MainText = RobloxServerFinder.Construct("div",{
+        textContent : "Search Player Count | 0 ",
+        className : "text-label font-subheader-1 ng-binding", 
+ 
+    });
+    RobloxServerFinder.Elements.SubMainText = RobloxServerFinder.Construct("div",{
+        textContent : "The amount of players you want to search for.",
+        className : "scale-label font-body ng-binding"
+    });
+    RobloxServerFinder.Elements.Spacer = RobloxServerFinder.Construct("p",{
+        className : "section-content-off",
+        textContent : "No Servers Found."
+    });
+    RobloxServerFinder.Elements.Slider = RobloxServerFinder.Construct("input",{
+         type : "range",
+         width : "150",
+         min : "0",
+         max : "0",
+         value : "0",
+         step : "1"
+    });
+    RobloxServerFinder.Elements.Header = RobloxServerFinder.Construct("h3",{
+        textContent : "Server Finder"
+    });
+    
+    RobloxServerFinder.Elements.NewLine = RobloxServerFinder.Construct("br");
+   
+    RobloxServerFinder.Elements.StatusLabel = RobloxServerFinder.Construct("p",{
+        textContent : "THIS IS A HINTTEXT"
+    },{
+        paddingTop : '1em',
+        marginBottom : '1em'
+    });
+    
+    // PlayerServerBox ( in the stackholder) 
+    RobloxServerFinder.Elements.PlayerServerBox = RobloxServerFinder.Construct("ul",{
+        className : "section rbx-game-server-item-container stack-list"
+    })
+    
+    RobloxServerFinder.Elements.StackHolder = RobloxServerFinder.Construct("div",{
+        className : "stack",
+        "data-maximumrows" : "10"
+    });
+    
+    // Make amendments
+   RobloxServerFinder.Elements.StackHolder.append(RobloxServerFinder.Elements.PlayerServerBox)
+    
+    // Element Updators 
+   RobloxServerFinder.UpdateStatusText = function()
+   {
+       
+       let CloseMatch = RobloxServerFinder.Search.ClosestMatch 
+       
+       if (CloseMatch == -10000) {
+           CloseMatch = "Finding a Server..."
+       }
+       
+       RobloxServerFinder.Elements.StatusLabel.textContent = "Range : " + RobloxServerFinder.Search.SearchRange[0] + "-" + RobloxServerFinder.Search.SearchRange[1] + " | Target : " + RobloxServerFinder.Search.PlayerCount + " | Closest Match : " + CloseMatch +" | Scanned : " + RobloxServerFinder.Search.TotalScanned + " servers. | Rate : " + RobloxServerFinder.ServerDetails.SearchSize;
+   }
+   RobloxServerFinder.setRandomHintStatus = function()
+   {
+       RobloxServerFinder.Elements.StatusLabel.textContent = RobloxServerFinder.Hints[GetRandomInt(2)];
+   }
+    
+    // Construction Functions 
+    
+    RobloxServerFinder.ElementConstructors.ConstructAvatar = function(Url) {
+        let AvatarHolder = RobloxServerFinder.Construct("span",{className : "avatar avatar-headshot-sm player-avatar"});
+        let AvatarLink = RobloxServerFinder.Construct("a",{className : "avatar-card-link"});
+        let AvatarImage = RobloxServerFinder.Construct("img",{
+            className : "avatar-card-image",
+            src : Url
+        });
+        //
+        AvatarLink.append(AvatarImage);
+        AvatarHolder.append(AvatarLink);
+        return AvatarHolder;
+    }
+    
+    RobloxServerFinder.ElementConstructors.MakeServerPanel = function(Identifer){
+        let Item = RobloxServerFinder.Construct("li",{className : "stack-row rbx-game-server-item"});
+        let Sectionheader = RobloxServerFinder.Construct("div",{className:"section-header"});
+        let Linkmenu = RobloxServerFinder.Construct("div",{className : "link-menu rbx-game-server-menu"});
+        let Details = RobloxServerFinder.Construct("div",{className : "section-left rbx-game-server-details"});
+        let Label = RobloxServerFinder.Construct("div",{
+            className : "text-info rbx-game-status rbx-game-server-status",
+            textContent : "<ServerPanel.Label>:ID->playerLabel",
+            id : Identifer + "playerLabel"
+        
+        });
+        let Label2 = RobloxServerFinder.Construct("div",{
+            className : "text-info rbx-game-status rbx-game-server-status",
+            textContent : "<RobloxServerFinder.Flags.AddUUID>",
+            id : Identifer + "playerLabel2"
+        },{
+            fontSize : "0.6em",
+            color : "#FFFFFF",
+            position : "absolute"
+        });
+        let Joinbtn = RobloxServerFinder.Construct("a",{
+            className : "btn-full-width btn-control-xs rbx-game-server-join",
+            textContent : "Join",
+            id : Identifer + "joinButton"
+        });
+        let Players = RobloxServerFinder.Construct("div",{
+            className : "section-right rbx-game-server-players",
+            id : Identifer + "playerContainer"
+        });
 
-    const cap = function(n,c1,c2)
-    {
-        if (n < c1)
-        {
-            return c1;
+        Details.append(Label);
+        Details.append(Joinbtn);
+        if (RobloxServerFinder.Flags.AddUUID){
+            Details.append(Label2);
         }
-        if (n > c2)
-        {
-            return c2;
-        }
-        return n
+        // Bind SectionHeader
+        Sectionheader.append(Linkmenu);
+        // Item Amendments.
+        Item.append(Sectionheader);
+        Item.append(Details);
+        Item.append(Players);
+        return Item;
     }
-    const fill = function(str,max,cap,fstr)
-    {
-        if(typeof(str) != "string") {str = str.toString()}
-        if(typeof(max) == "string") {max = max.length}
-        if(fstr==undefined) fstr = "⠀";
-        if(cap==undefined) {cap=true}
-        if(str.length > max && cap)
-        {
-            return str.substring(1,max)
-        }
-        if(str.length < max)
-        {
-            return str + fstr.repeat(max-str.length)
-        }
-        if (str.length == max)
-        {
-            return str;
-        }
+    
+    //&cursor=23f32f23f23f2f3
+    RobloxServerFinder.UrlGen.GenerateFindWithOnlyLimit = function(sortOrder,Limit){
+     //https://games.roblox.com/v1/games/%206284583030/servers/Public?limit=10
+      return `https://games.roblox.com/v1/games/${PlaceID}/servers/public?sortOrder=${sortOrder}&limit=${Limit}`
     }
-    const constructJoinScript = function(placeID,UUID)
-    {
-        return "Roblox.GameLauncher.joinGameInstance(" + placeID + ",\"" + UUID + "\")";
+    
+    // ServerFinding Functions 
+    RobloxServerFinder.UrlGen.GenerateFindWithCursorAndLimit = function(sortOrder,Limit,Cursor){
+     //https://games.roblox.com/v1/games/%206284583030/servers/Public?limit=10
+      return `https://games.roblox.com/v1/games/${PlaceID}/servers/public?sortOrder=${sortOrder}&limit=${Limit}&cursor=${Cursor}`
     }
-    const getRandomInt = function(max) {
-        return Math.floor(Math.random() * max);
-    }
-    const returnVisibleBool = function(bool) {
-        var defs = ['visible','hidden'];
-        if (bool) {return defs[0]}else{return defs[1]}
-    }
-    const expandSearch = function()
-    {
-        searchCountRange[0] = cap(Number(searchCountRange[0])-1,1,searchCapacity)
-        searchCountRange[1] = cap(Number(searchCountRange[1])+1,1,searchCapacity)
-        searchExpandCount +=1;
-    }
-    const setRandomHintStatus = function()
-    {
-        hintText = hints[getRandomInt(2)]
-    }
-    const updateStatus = function(search,page,closematch)
-    {
-        if (typeof(closematch) == "number" || typeof(closematch) == "string") {}else{
-            closematch = "*";
-        }
-
-        status_label.innerHTML = "Range : " + searchCountRange[0] + "-" + searchCountRange[1] + " | Target : " + currentsearch + " | Closest Match : " + closematch +" | Page : " + page + " / " + searchTotal + " | Rate : " + searchRate;
-    }
-    const setStatus = function(text)
-    {
-        status_label.innerHTML = text;
-    }
-    const updateCapacity = function()
-    {
-        if (searchCapacity != undefined){
-            app.max = searchCapacity.toString();
-            app.value = "0";
-        }
-    }
-    const smartSearch = function (gid, min, max,search ) {
-        if (!searchStatus) {
-            setStatus(hintText)
-            return
-        }
-        currentsearch = search;
-
-        // Get the game page
-        searchPageMemory[1] = searchPageMemory[0];
-        var page = searchCountLoop;
-        searchPageMemory[0] = page;
-        if (searchBackwards) {
-            searchCountLoop -=searchRate;
+    RobloxServerFinder.UrlGen.GenerateFind = function(sortOrder="Asc",Limit=10,Cursor){
+        if(Cursor == undefined){
+            return RobloxServerFinder.UrlGen.GenerateFindWithOnlyLimit(sortOrder,Limit)
         }else{
-            searchCountLoop +=searchRate;
+            return RobloxServerFinder.UrlGen.GenerateFindWithCursorAndLimit(sortOrder,Limit,Cursor);
         }
-        if (searchExpandCount > searchExpandCountLimit)
-        {
-            searchExpandCount = 0;
-            search = Math.floor((searchCountRange[0]+searchCountRange[1])/2);
-            searchRate = (searchRateDef*1);
-        }
-        searchCountLoop = cap(searchCountLoop,0,1000000000);
-        searchRateMemory[1] = cap(searchRate,1,1000000000)
-        searchRate = cap(searchRate,1,1000000000);
-        searchRateMemory[0] = cap(searchRate,1,1000000000)
-        page = cap(page,0,1000000000);
-
-        if (searchPageMemory[0] == searchPageMemory[1] )
-        {
-            searchSamePageCount += 1;
-        }
-        if (searchSamePageCount > searchSamePageMax)
-        {
-            searchSamePageCount = 0;
-            updateStatus(search,page,close);
-            expandSearch();
-        }
-
-        if (searchRateMemory[0] == 1 && searchRateMemory[1] == 1)
-        {
-            searchRateCount += 1;
-        }
-        if (searchRateCount > searchRateRepMax)
-        {
-            searchRateCount = 0;
-            updateStatus(search,page,close);
-            expandSearch();
-        }
-
-        // Fetch roblox's servers
-        fetch(`https://www.roblox.com/games/getgameinstancesjson?placeId=${gid}&startindex=${page}`)
-        // Turn the response into JSON
-            .then((resp) => resp.json())
-            .then(function (data) {
-
-            let matchFound = false
-            let matchNum = 0;
-            let close = 0;
-            let closeNum = 0;
-            for(var i in data.Collection)
-            {
-                var tserver = data.Collection[i];
-                close = tserver.CurrentPlayers.length;
-                closeNum = i;
-
-                if(tserver.CurrentPlayers.length >= searchCountRange[0] && tserver.CurrentPlayers.length <= searchCountRange[1])
-                {
-                    matchNum =i;
-                    matchFound = true;
-                }
-            }
-            searchDidFlip[0] = false
-            var didFindDirection = false;
-            if (close<search)
-            {
-                didFindDirection = true;
-                searchRate = Math.round(searchRate * searchDecreaseRate);
-                if (searchRate < searchRateSingleMax)
-                {
-                    searchRate = cap(searchRate - 1,1,10000000);
-                }
-                searchBackwards = true
-                searchDidFlip[0] = true
-            }
-            if (close>search)
-            {
-                didFindDirection = false;
-                searchBackwards =false
-                searchDidFlip[0] = true
-            }
-            if(close==search)
-            {
-                searchRate = Math.round(searchRate * searchDecreaseRateWhenClose);
-            }
-            if (page>=searchTotal)
-            {
-                searchBackwards = true;
-                searchRate = Math.round(searchRate * searchDecreaseRate);
-            }
-            if(searchDidFlip[0] == true && searchDidFlip[1] == false || searchDidFlip[0] == false && searchDidFlip[1] == true)
-            {
-                searchFlipCount +=1;
-            }
-            if (searchFlipCount > searchFlipMax)
-            {
-                updateStatus(search,page,close);
-                searchFlipCount = 0;
-                expandSearch();
-            }
-            searchDidFlip[1] = searchDidFlip[0]
-            if (matchFound) {
-                var server = data.Collection[matchNum];
-                console.log(server)
-                addToServerPanels(server);
-                searchStatus = false
-                showSearchButtons();
-                setStatus(hintText)
-                return true;
-            } else if (data.Collection.length == 0) {
-                max = page;
-                updateStatus(search,page,close);
-                smartSearch(gid, min, max,search);
-            } else {
-                min = page;
-                updateStatus(search,page,close);
-                smartSearch(gid, min, max,search);
-            }
-        });
-    };
-
-    const quickSearch = function (gid, min, max,search ) {
-        if (!searchStatus) {
-            setStatus(hintText)
-            return
-        }
-        currentsearch = search;
-
-        // Get the game page
-        searchPageMemory[1] = searchPageMemory[0];
-        var page = Math.round((max + min) / 2);
-        searchPageMemory[0] = page;
-        if (searchPageMemory[0] == searchPageMemory[1] )
-        {
-            searchSamePageCount += 1;
-        }
-        if (searchSamePageCount > searchSamePageMaxQuick)
-        {
-            setStatus(hintText);
-            searchStatus = false
-            showSearchButtons();
-            alert("Quick Search could not find a server, with " + search + " Players. Try again later");
-            return true;
-        }
-
-        // Fetch roblox's servers
-        fetch(`https://www.roblox.com/games/getgameinstancesjson?placeId=${gid}&startindex=${page}`)
-        // Turn the response into JSON
-            .then((resp) => resp.json())
-            .then(function (data) {
-            let matchFound = false
-            let matchNum = 0;
-            let close = 0;
-            for(var i in data.Collection)
-            {
-                var tserver = data.Collection[i];
-
-                close = tserver.CurrentPlayers.length
-                if(tserver.CurrentPlayers.length == search)
-                {
-                    matchNum = i;
-                    matchFound = true;
-                }
-            }
-            if (matchFound) {
-                var server = data.Collection[matchNum];
-                addToServerPanels(server);
-                setStatus(hintText)
-                searchStatus = false
-                showSearchButtons();
-                return true;
-            } else if (data.Collection.length == 0) {
-                max = page;
-                updateStatus(search,page,close);
-
-                quickSearch(gid, min, max,search);
-            } else {
-                min = page;
-                updateStatus(search,page,close);
-
-
-                quickSearch(gid, min, max,search);
-            }
-        });
-    };
-    const hideSearchButtons = function() {
-        var buttons = searchButtons
-        for (var i in buttons)
-        {
-            var button = buttons[i];
-            button.style.display = "none";
-        }
-        stop_btn.style.display = displayType
     }
-    const showSearchButtons = function() {
-        setRandomHintStatus();
-
-        var buttons = searchButtons
-        for (var i in buttons)
-        {
-            var button = buttons[i];
-            button.style.display = displayType;
-        }
-        stop_btn.style.display = "none"
+    
+    RobloxServerFinder.Validate = function(Response) {
+        return true 
     }
-    let searchStatus = false;
-    let searchCount = 0;
-    let searchCountRange = [0,0];
-    let searchCountLoop = 0;
-    let searchDecreaseRate = 0.8;
-    let searchDecreaseRateWhenClose = 0.99999999999985;
-    let searchBackwards = false;
-    let displayType = "inline";
-    let serverPanels = [];
-    const resetParam = function()
+    
+    
+    
+    
+    RobloxServerFinder.AddToServerPanels = function(Server)
     {
-
-        searchRate = (searchRateDef*1);
-        searchCountLoop = 0;
-        searchPageMemory = [0,0];
-        searchBackwards = false;
-        searchFlipCount = 0;
-        searchDidFlip = [false,false];
-        searchCountRange = [searchCount,searchCount]
-        searchSamePageCount = 0;
-        searchExpandCount = 0;
-    }
-
-    let h3ader = document.createElement("h3");
-    h3ader.innerHTML = "Server Finder";
-    let text_label = document.createElement("div")
-    text_label.innerHTML = "Search Player Count | 0 "
-    text_label.className = "text-label font-subheader-1 ng-binding"
-    let stext_label = document.createElement("div")
-    stext_label.innerHTML = "The amount of players you want to search for."
-    stext_label.className = "scale-label font-body ng-binding"
-    let hr = document.createElement("hr")
-    let br = document.createElement("br")
-    let status_label = document.createElement("p")
-    status_label.innerHTML = hintText
-    status_label.style.paddingTop = '1em'
-    status_label.style.marginBottom = '1em'
-
-
-    let app = document.createElement("input")
-    app.type = "range"
-    app.width = "150"
-    app.min = "0";
-    app.max = searchCapacity.toString();
-    app.value = "0";
-    app.step = "1";
-    app.oninput = function () {
-        searchCount = this.value;
-        text_label.innerHTML ="Search Player Count | " + this.value.toString()
-    };
-
-
-    let btn = document.createElement("span");
-    btn.onclick = function () {
-        hideSearchButtons()
-        resetParam()
-        searchStatus = true
-        quickSearch(gid, 0, searchTotal,searchCount);
-    };
-    btn.innerHTML = "Quick Search";
-    btn.className = "btn-secondary-md";
-    btn.style.display = displayType;
-
-    let btn2 = document.createElement("span");
-    btn2.onclick = function () {
-        hideSearchButtons()
-        resetParam()
-        searchStatus = true
-        searchCountRange = [searchCount,searchCount];
-        let estami = Math.floor(Math.abs(1-(searchCount/searchCapacity))*searchTotal)
-        searchCountLoop = estami;
-        smartSearch(gid, estami, 10000,searchCount);
-    };
-    btn2.innerHTML = "Smart Search";
-    btn2.className = "btn-secondary-md";
-    btn2.style.display = displayType;
-
-    // <div class="rbx-running-games-footer">
-    //<button type="button" class="btn-control-sm btn-full-width rbx-running-games-load-more">Load More</button>
-    // </div>
-    let footer = document.createElement("span");
-    footer.className = "rbx-running-games-footer"
-    let clearbutton = document.createElement("button");
-    clearbutton.className = "btn-control-sm btn-full-width"
-    clearbutton.type = "button";
-    clearbutton.innerHTML = "Clear All";
-    clearbutton.style.visibility = "hidden";
-    footer.append(clearbutton);
-    clearbutton.onclick = function()
-    {
-        playerserverbox.innerHTML = "";
-        serverPanels = [];
-        spacer.innerHTML = "No Servers Found";
-        clearbutton.style.visibility = "hidden";
-    }
-
-    let stop_btn = document.createElement("span");
-    stop_btn.style.display = "none"
-    stop_btn.onclick = function () {
-        searchStatus = false
-        resetParam()
-        showSearchButtons();
-        setStatus(hintText)
-    };
-    stop_btn.innerHTML = "Stop Searching";
-    stop_btn.className = "btn-secondary-md";
-
-    const createAvatar = function(url)
-    {
-        var avatarHolder = document.createElement("span");
-        avatarHolder.className = "avatar avatar-headshot-sm player-avatar";
-        //
-        var avatarLink = document.createElement("a");
-        avatarLink.className = "avatar-card-link";
-        //
-        var avatarImage = document.createElement("img");
-        avatarImage.className = "avatar-card-image";
-        avatarImage.src = url;
-        //
-        avatarLink.append(avatarImage);
-        avatarHolder.append(avatarLink);
-        //
-        return avatarHolder;
-    }
-    const makeServerItem = function(id)
-    {
-        var item = document.createElement("li");
-        item.className = "stack-row rbx-game-server-item";
-        var sectionheader = document.createElement("div")
-        sectionheader.className = "section-header";
-
-        var linkmenu = document.createElement("div");
-        linkmenu.className = "link-menu rbx-game-server-menu";
-
-        var details = document.createElement("div");
-        details.className = "section-left rbx-game-server-details";
-
-        var label = document.createElement("div");
-        label.className = "text-info rbx-game-status rbx-game-server-status";
-        label.innerHTML = "11 of 12 people max";
-        label.id = id + "playerLabel";
-
-        var label2 = document.createElement("div");
-        label2.className = "text-info rbx-game-status rbx-game-server-status";
-        label2.innerHTML = "UUID:192892178-21818912";
-        label2.id = id + "playerLabel2";
-        label2.style.fontSize = "0.6em";
-        label2.style.color = "#FFFFFF";
-        label2.style.position = "absolute";
-
-        var joinbtn = document.createElement("a");
-        joinbtn.className = "btn-full-width btn-control-xs rbx-game-server-join";
-        joinbtn.innerHTML = "Join";
-        joinbtn.id = id + "joinButton";
-
-        var players = document.createElement("div");
-        players.className = "section-right rbx-game-server-players";
-        players.id = id + "playerContainer";
-
-
-        details.append(label);
-        details.append(joinbtn);
-        if (addUUID){
-            details.append(label2);
-        }
-
-        sectionheader.append(linkmenu);
-
-        item.append(sectionheader);
-        item.append(details);
-        item.append(players);
-        return item;
-    }
-    let stackholder = document.createElement("div");
-    stackholder.className = "stack";
-    stackholder["data-maximumrows"] = "10";
-
-    let playerserverbox = document.createElement("ul");
-    playerserverbox.className = "section rbx-game-server-item-container stack-list";
-
-    stackholder.append(playerserverbox);
-    let spacer = document.createElement("p");
-    spacer.className= "section-content-off";
-    spacer.innerHTML = "No Servers Found.";
-
-
-    const addToServerPanels = function(server)
-    {
-        spacer.innerHTML = "";
-        clearbutton.style.visibility = "visible";
-        var serverCount = 0;
-        for (let i = 0; i < serverPanels.length; i++) {
-            var panel = serverPanels[i]
-            if (panel.id == server.Guid + (serverCount).toString())
+        RobloxServerFinder.Elements.Spacer.textContent = "";
+        let serverCount = 0;
+        for (let i = 0; i < RobloxServerFinder.ServerDetails.ServerPanels.length; i++) {
+            let Panel = RobloxServerFinder.ServerDetails.ServerPanels[i]
+            if (Panel.id == Server.id + (serverCount).toString())
             {
                 serverCount += 1;
-                console.log("Found Match Of Server Instance.");
             }
         }
-        var id = server.Guid + (serverCount).toString();
-        var serverPanel = {
-            id   : id,
-            server : server,
+        let Identifer = Server.Guid + (serverCount).toString();
+        let ServerPanel = {
+            id   : Identifer,
+            server : Server,
             item : {},
         };
-        var item = makeServerItem(id);
+        let Item = RobloxServerFinder.ElementConstructors.MakeServerPanel(Identifer);
 
-        playerserverbox.prepend(item);
+        RobloxServerFinder.Elements.PlayerServerBox.prepend(Item);
 
         // set item
-        serverPanel.item =item;
+        ServerPanel.item =Item;
 
-        serverPanels.length[serverPanels.length] = serverPanel;
+        RobloxServerFinder.ServerDetails.ServerPanels.length[RobloxServerFinder.ServerDetails.ServerPanels.length] = ServerPanel;
         //
-        document.getElementById(id + "playerLabel").innerHTML = server.PlayersCapacity;
-        if (addUUID) {
-            document.getElementById(id + "playerLabel2").innerHTML = "UUID :" + id;
+        document.getElementById(Identifer + "playerLabel").textContent = Server.playing + " of " + Server.maxPlayers + " people max";
+        if (RobloxServerFinder.Flags.AddUUID) {
+            document.getElementById(Identifer + "playerLabel2").textContent = "UUID :" + Identifer;
         }
 
-        for (let i = 0; i < server.CurrentPlayers.length; i++) {
-            var player = server.CurrentPlayers[i]
-            var playerImageURL = player.Thumbnail.Url;
-            document.getElementById(id + "playerContainer").append(createAvatar(playerImageURL));
+        for (let i = 0; i < Server.playing; i++) {
+            var PlayerImageURL = "https://raw.githubusercontent.com/Wh1msicaly/web/master/Default.png"; // Dont as quickFix Replacement.
+            document.getElementById(Identifer + "playerContainer").append(RobloxServerFinder.ElementConstructors.ConstructAvatar(PlayerImageURL));
         }
+        
         // OLD SAVED
-        var button = document.getElementById(id + "joinButton");
-        //button.setAttribute("onclick",constructJoinScript(gid,id));
-        // EVAL
+        let Button = document.getElementById(Identifer + "joinButton");
 
-        document.getElementById(id + "joinButton").onclick = function() {
+        document.getElementById(Identifer + "joinButton").onclick = function() {
             try {
-                console.log(server.JoinScript);
-                console.log(">>> " + gid + " " + server.Guid);
+                console.log(">>> " + PlaceID + " " + Server.id);
                 // NON EVAL CHROME CONTEN POLICY CONFORMANT.
-                Roblox.GameLauncher.joinGameInstance(gid, String(server.Guid));
+                
+                Roblox.GameLauncher.joinGameInstance(PlaceID, String(Server.id));
             } catch (e) {
                 console.log("Error:", e);
             }
         }
         //
-        serverPanels.push(serverPanel);
-
+        RobloxServerFinder.ServerDetails.ServerPanels.push(ServerPanel);
+        
+        // Apply Display to the clearbutton.
+        RobloxServerFinder.Apply(RobloxServerFinder.Elements.ClearButton,{},RobloxServerFinder.StylePacks.InLineDisplay)
+        RobloxServerFinder.SetButtonState('NormalButton')
+        RobloxServerFinder.setRandomHintStatus();
 
     }
-    // construction <>
-    document.getElementById("game-instances").prepend(spacer);
-    document.getElementById("game-instances").prepend(footer);
-    document.getElementById("game-instances").prepend(stackholder);
-    document.getElementById("game-instances").prepend(status_label);
-    document.getElementById("game-instances").prepend(br);
-    document.getElementById("game-instances").prepend(br);
-    document.getElementById("game-instances").prepend(stop_btn);
-    document.getElementById("game-instances").prepend(btn);
-    document.getElementById("game-instances").prepend(btn2);
-    document.getElementById("game-instances").prepend(app);
-    document.getElementById("game-instances").prepend(stext_label)
-    document.getElementById("game-instances").prepend(text_label);
-    document.getElementById("game-instances").prepend(h3ader);
-    // construction <>
+                                    
+    RobloxServerFinder.Expand = function() {
+        RobloxServerFinder.Search.SearchRange[0]= (RobloxServerFinder.Search.SearchRange[0]*1)-1;
+        RobloxServerFinder.Search.SearchRange[1]= (RobloxServerFinder.Search.SearchRange[1]*1)+1;
+        RobloxServerFinder.Search.SearchRange[0] = Range(RobloxServerFinder.Search.SearchRange[0]*1,0,1000000);
+        RobloxServerFinder.Search.SearchRange[1] = Range(RobloxServerFinder.Search.SearchRange[1]*1,0,1000000);
+    }
+    
+    
+    RobloxServerFinder.LinearSearch = function() {
+        
+        //RobloxServerFinder.Search.PlayerCount
+        fetch(RobloxServerFinder.UrlGen.GenerateFind(RobloxServerFinder.Search.ReadDirection,RobloxServerFinder.ServerDetails.SearchSize,RobloxServerFinder.Search.CurrentCursor),ProvideCredintials).then((resp) => resp.json()).then(function(Response){
+            
+            if (!RobloxServerFinder.Enabled) { return }
+            
+            // SaveLast 
+            RobloxServerFinder.Search.LastClosestMatch = RobloxServerFinder.Search.ClosestMatch
+            
+            if ( RobloxServerFinder.Validate(Response) ) {
+                let ServerList = Response.data;
+                
+                // If serverList is Invalid!
+                if (!IsIterable(ServerList)) {
+                    RobloxServerFinder.Elements.StatusLabel.textContent = "Waiting for Roblox to Renew Request.";
+                    setTimeout(RobloxServerFinder.LinearSearch, 1000);
+                    return;
+                }
+                
+       
+                for(const ServerObject of ServerList ) {
+                    let PlayerCount = (ServerObject.playing*1)
+                    let DistanceFromClosest = Difference(RobloxServerFinder.Search.ClosestMatch,RobloxServerFinder.Search.PlayerCount)
+                    let DistanceFromCurrent = Difference(PlayerCount,RobloxServerFinder.Search.PlayerCount)
+                    // if within Range
+                    if ((PlayerCount*1) >= RobloxServerFinder.Search.SearchRange[0] && (PlayerCount*1) <= RobloxServerFinder.Search.SearchRange[1]){
+                        console.warn("Found",ServerObject); 
+                        RobloxServerFinder.AddToServerPanels(ServerObject);
+                        return; 
+                    }
+                  
+                    if (DistanceFromCurrent < DistanceFromClosest) {
+                        RobloxServerFinder.Search.ClosestMatch = PlayerCount
+                        RobloxServerFinder.Search.ClosestObject = ServerObject
+                    } 
+                    
+                    RobloxServerFinder.Search.TotalScanned +=1; 
+                }
+                
+                RobloxServerFinder.Search.LastDirection = RobloxServerFinder.Search.Direction;
+                ( RobloxServerFinder.Search.LastClosestMatch == RobloxServerFinder.Search.ClosestMatch ) ? RobloxServerFinder.Search.SamePageCount+= 1 : RobloxServerFinder.Search.SamePageCount = 0; 
+                
+                if ( RobloxServerFinder.Search.ClosestMatch > RobloxServerFinder.Search.PlayerCount ) {
+                    RobloxServerFinder.Search.Direction = "next"
+                }
+                if ( RobloxServerFinder.Search.ClosestMatch < RobloxServerFinder.Search.PlayerCount ) {
+                    RobloxServerFinder.Search.Direction = "last"
+                } 
+                
+                if ( RobloxServerFinder.Search.LastDirection != RobloxServerFinder.Search.Direction ) {
+                    //RobloxServerFinder.Expand()
+                }
 
-
-
-
-    let searchButtons = [btn,btn2];
-
+                
+                // Update Text
+                console.warn(Response,RobloxServerFinder.Search.SamePageCount,RobloxServerFinder.Search.Direction)
+                // Set the next one
+                if (RobloxServerFinder.Search.ReadDirection == "Asc") {
+                    if (RobloxServerFinder.Search.Direction == "next") {
+                        RobloxServerFinder.Search.CurrentCursor = Response.previousPageCursor 
+                    }
+                    if (RobloxServerFinder.Search.Direction == "last") {
+                         RobloxServerFinder.Search.CurrentCursor = Response.nextPageCursor 
+                    }
+                }else{
+                    if (RobloxServerFinder.Search.Direction == "next") {
+                        RobloxServerFinder.Search.CurrentCursor = Response.nextPageCursor 
+                    }
+                    if (RobloxServerFinder.Search.Direction == "last") {
+                         RobloxServerFinder.Search.CurrentCursor = Response.previousPageCursor 
+                    }
+                }
+                // Update foundings
+                RobloxServerFinder.UpdateStatusText()
+                // if the cursor is still undefined or then there is no cursor to be found. 
+                if(RobloxServerFinder.Search.CurrentCursor == undefined) {
+                    if (RobloxServerFinder.Search.ClosestObject == undefined) {
+                        // Non Recoverable. 
+                        RobloxServerFinder.Search.CurrentCursor = ""; 
+                        RobloxServerFinder.LinearSearch();
+                        return 
+                    }
+                    console.warn("All serveres exhausted here is the closest");
+                    console.warn("Found",RobloxServerFinder.Search.ClosestObject); 
+                    RobloxServerFinder.AddToServerPanels(RobloxServerFinder.Search.ClosestObject);
+                    return; 
+                }
+                RobloxServerFinder.LinearSearch();
+  
+            }else{
+                // Contuine Search if invalid
+                RobloxServerFinder.LinearSearch();
+            }
+        }).catch((error) =>{
+            console.warn("Actual Error catched");
+            console.warn(error)
+            RobloxServerFinder.Elements.StatusLabel.textContent = "Waiting for Roblox to Renew Request.";
+            setTimeout(RobloxServerFinder.LinearSearch, 1000);
+        });
+    }
+   
+    
+    
+  
+    // QuickSearchHasBeenDisabled.
+    RobloxServerFinder.SetButtonState = function(state) {
+        switch (state) {
+            case 'NormalButton':
+                RobloxServerFinder.Apply(RobloxServerFinder.Elements.QuickSearchButton,{},RobloxServerFinder.StylePacks.Invisible)
+                RobloxServerFinder.Apply(RobloxServerFinder.Elements.SmartSearchButton,{},RobloxServerFinder.StylePacks.InLineDisplay)
+                RobloxServerFinder.Apply(RobloxServerFinder.Elements.CancelButton,{},RobloxServerFinder.StylePacks.Invisible)
+            break;
+            case 'StopSearch':
+                RobloxServerFinder.Apply(RobloxServerFinder.Elements.QuickSearchButton,{},RobloxServerFinder.StylePacks.Invisible)
+                RobloxServerFinder.Apply(RobloxServerFinder.Elements.SmartSearchButton,{},RobloxServerFinder.StylePacks.Invisible)
+                RobloxServerFinder.Apply(RobloxServerFinder.Elements.CancelButton,{},RobloxServerFinder.StylePacks.InLineDisplay)
+            break;
+        }
+    }
+    
+    
+    // Do some 
+    RobloxServerFinder.InitServerData = function(callback){
+        
+        fetch(RobloxServerFinder.UrlGen.GenerateFind("Desc")).then((resp) => resp.json()).then(function(Response){
+            if ( RobloxServerFinder.Validate(Response) ) {
+                let ServerList = Response.data; 
+                
+                for(const ServerObject of ServerList ) {
+                    //console.warn(ServerObject)
+                    if( ServerObject.maxPlayers != undefined ) {
+                        RobloxServerFinder.ServerDetails.SearchCapacity = ServerObject.maxPlayers
+                        
+                        callback()// LAZY PROMISE RESOLVER
+                        break; 
+                    }
+                }
+                
+                console.warn(RobloxServerFinder.ServerDetails);
+                
+            }else{
+                console.log("Invalid Response"); 
+                callback()
+            }
+    
+        });
+    } 
+    
+    RobloxServerFinder.Init = function(callback){
+        // Arrow 
+        RobloxServerFinder.InitServerData(()=>{
+            // Init UI 
+            console.log(RobloxServerFinder.ServerDetails.SearchCapacity);
+            RobloxServerFinder.Apply(RobloxServerFinder.Elements.Slider,{ max : RobloxServerFinder.ServerDetails.SearchCapacity })
+            RobloxServerFinder.SetButtonState('NormalButton');
+            
+            console.log(" Initiliazed " );
+            
+            
+        });
+        
+        /*cheap resolve===>*/callback();
+        
+        RobloxServerFinder.setRandomHintStatus();
+  
+    }
+    
+   //"none"
+    
+    RobloxServerFinder.Elements.Slider.oninput = function() {
+        let Value = this.value;
+        
+        RobloxServerFinder.Search.PlayerCount = Value;
+        RobloxServerFinder.Elements.MainText.textContent = "Search Player Count | " + Value.toString() 
+    
+    }
+    //SearchRange
+    RobloxServerFinder.Elements.SmartSearchButton.onclick = function() {
+        RobloxServerFinder.Search.SearchRange = [RobloxServerFinder.Search.PlayerCount,RobloxServerFinder.Search.PlayerCount];
+        RobloxServerFinder.Search.CurrentCursor = ""
+        RobloxServerFinder.Search.ClosestMatch = -10000;
+        RobloxServerFinder.Search.LastClosestMatch = -10000;
+        RobloxServerFinder.Search.SamePageCount = 0;
+        RobloxServerFinder.Search.ClosestObject = undefined; // Needs to be reset.TotalScanned
+        RobloxServerFinder.Search.TotalScanned = 0;
+        RobloxServerFinder.Search.Direction = "next"
+        RobloxServerFinder.Search.LastDirection = "next"
+        RobloxServerFinder.Enabled = true; 
+        RobloxServerFinder.SetButtonState('StopSearch');
+        RobloxServerFinder.Search.ReadDirection = "Desc" 
+        
+        // This really is the breaker or maker. You cant start in the middle : ( 
+        if (RobloxServerFinder.Search.PlayerCount <= RobloxServerFinder.ServerDetails.SearchCapacity*0.6 ) {
+          RobloxServerFinder.Search.ReadDirection = "Asc" 
+        }
+        
+        RobloxServerFinder.LinearSearch()
+    }
+    
+    RobloxServerFinder.Elements.CancelButton.onclick = function() {
+        RobloxServerFinder.Enabled = false;
+        // Apply Display to the clearbutton.
+        RobloxServerFinder.SetButtonState('NormalButton')
+        RobloxServerFinder.setRandomHintStatus()
+    }
+    
+    RobloxServerFinder.Elements.ClearButton.onclick = function() {
+        RobloxServerFinder.Elements.PlayerServerBox.textContent = "";
+        RobloxServerFinder.ServerDetails.ServerPanels = [];
+        RobloxServerFinder.Elements.Spacer.textContent = "No Servers Found.";
+        RobloxServerFinder.Apply(RobloxServerFinder.Elements.ClearButton,{},RobloxServerFinder.StylePacks.Invisible)
+    }
+    
+    // Do the Constructrion after intiliizing ( removed for now ) . . . 
+    RobloxServerFinder.Init(() =>{
+            // Constructor order 
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.Header);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.MainText);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.SubMainText);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.Slider);
+        // Buttons
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.QuickSearchButton);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.SmartSearchButton);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.CancelButton);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.StatusLabel);
+        //RobloxServerFinder.Elements.StatusLabel
+   
+        //
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.StackHolder);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.ClearButton);
+        
+        // Space
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.NewLine);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.NewLine);
+    
+        //RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.NewLine);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.Footer);
+        RobloxServerFinder.ConstructorArray.push(RobloxServerFinder.Elements.Spacer);
+        //
+        const GameInstances = document.getElementById("game-instances");
+        // construction <>
+        for (let Index=RobloxServerFinder.ConstructorArray.length; Index > 0;Index--) {
+            let CurrentElement = RobloxServerFinder.ConstructorArray[Index-1]; GameInstances.prepend(CurrentElement);
+        }
+     
+    });
+    // Globalize
+    window.RobloxServerFinder = RobloxServerFinder 
 })();
